@@ -1,6 +1,6 @@
 [package]
 name = "parquet-file-fs"
-version = "0.1.0" # x-release-please-version
+version = "0.2.0" # x-release-please-version
 edition = "2021"
 description = "Read-only fsspec filesystem over parquet archives: ls, cat and glob the files stored inside parquet shards"
 license = "MIT OR Apache-2.0"
