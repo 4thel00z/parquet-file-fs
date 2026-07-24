@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="parquet-file-fs" width="128" height="128">
+</p>
+
 <h1 align="center">parquet-file-fs</h1>
 
 <p align="center">
-  <strong>Browse parquet archives like a directory tree — a read-only fsspec filesystem with a Rust core.</strong>
+  <strong>ls, cat and glob the files stored inside parquet shards — a read-only fsspec filesystem with a Rust core.</strong>
 </p>
 
 <p align="center">

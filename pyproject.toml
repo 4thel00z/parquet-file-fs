@@ -6,13 +6,24 @@ build-backend = "maturin"
 [project]
 name = "parquet-file-fs"
 version = "0.1.0"
-description = "Read-only fsspec filesystem over parquet archives: browse path+content shards like a directory tree"
+description = "Read-only fsspec filesystem over parquet archives: ls, cat and glob the files stored inside parquet shards, with a Rust core"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 authors = [{ name = "4thel00z" }]
-keywords = ["parquet", "fsspec", "filesystem", "dataset", "arrow", "rust"]
+keywords = [
+    "parquet",
+    "fsspec",
+    "filesystem",
+    "virtual-filesystem",
+    "arrow",
+    "columnar",
+    "dataset",
+    "s3",
+    "pyo3",
+    "rust",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
