@@ -1,4 +1,15 @@
-# parquet-file-fs
+<h1 align="center">parquet-file-fs</h1>
+
+<p align="center">
+  <strong>Browse parquet archives like a directory tree — a read-only fsspec filesystem with a Rust core.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/4thel00z/parquet-file-fs/actions/workflows/ci.yaml"><img src="https://github.com/4thel00z/parquet-file-fs/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/4thel00z/parquet-file-fs/actions/workflows/python-ci.yml"><img src="https://github.com/4thel00z/parquet-file-fs/actions/workflows/python-ci.yml/badge.svg" alt="python-ci"></a>
+  <a href="https://pypi.org/project/parquet-file-fs/"><img src="https://img.shields.io/pypi/v/parquet-file-fs?logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
+</p>
 
 Read-only [fsspec](https://filesystem-spec.readthedocs.io/) filesystem over
 parquet "archive" shards — parquet files where each row is one file
@@ -74,8 +85,30 @@ URLs for `http(s)://`.
 ## Development
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install maturin pytest pyarrow fsspec
-cargo test                 # Rust tests
-.venv/bin/maturin develop  # build + install the extension
-.venv/bin/pytest           # Python tests
+uv sync                 # dev deps from [dependency-groups]
+uv run maturin develop  # build + install the extension
+uv run pytest           # Python tests
+cargo test              # Rust tests
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all
 ```
+
+Without uv:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install maturin pytest pyarrow pyyaml fsspec
+.venv/bin/maturin develop && .venv/bin/pytest
+```
+
+## Releasing
+
+Commits on `master` drive [release-please](https://github.com/googleapis/release-please):
+it opens a release PR that bumps `pyproject.toml`, `Cargo.toml` (via the
+`x-release-please-version` marker) and `Cargo.lock`. Merging that PR tags the
+release and publishes wheels (linux x86_64, macOS arm64) plus an sdist to PyPI
+through Trusted Publishing — no API tokens in the repo. A failed publish can be
+re-run with `workflow_dispatch` on the `release-please` workflow.
+
+## License
+
+MIT OR Apache-2.0, at your option.

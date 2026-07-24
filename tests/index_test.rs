@@ -107,7 +107,13 @@ fn ls_semantics() {
     let images = idx.ls("/images/").unwrap();
     let names: Vec<&str> = images.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["images/a.png", "images/b.png", "images/sub"]);
-    assert!(images.iter().find(|e| e.name == "images/sub").unwrap().is_dir);
+    assert!(
+        images
+            .iter()
+            .find(|e| e.name == "images/sub")
+            .unwrap()
+            .is_dir
+    );
 
     // ls of a file returns itself
     let f = idx.ls("readme.txt").unwrap();
@@ -149,7 +155,9 @@ fn column_detection_and_override() {
     let src = vec![p.to_str().unwrap().to_string()];
 
     // auto-detect finds file_name but not image_bytes
-    let err = build_index(&src, None, None, DupPolicy::Error).err().unwrap();
+    let err = build_index(&src, None, None, DupPolicy::Error)
+        .err()
+        .unwrap();
     let msg = err.to_string();
     assert!(msg.contains("content") && msg.contains("image_bytes"));
 

@@ -85,7 +85,10 @@ fn string_content_column_works() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("s.parquet");
     let batch = RecordBatch::try_from_iter(vec![
-        ("path", Arc::new(StringArray::from(vec!["a.txt"])) as ArrayRef),
+        (
+            "path",
+            Arc::new(StringArray::from(vec!["a.txt"])) as ArrayRef,
+        ),
         (
             "content",
             Arc::new(StringArray::from(vec!["hello"])) as ArrayRef,

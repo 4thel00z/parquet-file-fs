@@ -1,7 +1,10 @@
 [package]
 name = "parquet-file-fs"
-version = "0.1.0"
+version = "0.1.0" # x-release-please-version
 edition = "2021"
+description = "Read-only fsspec filesystem over parquet archives (path + content columns)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/4thel00z/parquet-file-fs"
 
 [lib]
 name = "parquet_file_fs"
@@ -30,3 +33,11 @@ url = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Release builds trade compile time for cross-crate inlining on the
+# parquet decode path. `panic` stays "unwind": the extension module relies on
+# unwinding to turn Rust panics into Python exceptions rather than aborting
+# the interpreter.
+[profile.release]
+lto = "thin"
+codegen-units = 1

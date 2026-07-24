@@ -165,7 +165,9 @@ impl Archive {
             return Ok(a.clone());
         }
         let content_col = self.index.shards[shard_id].content_col;
-        let col = self.read_rg_columns(shard_id, rg, &[content_col])?.remove(0);
+        let col = self
+            .read_rg_columns(shard_id, rg, &[content_col])?
+            .remove(0);
         self.chunks.lock().unwrap().put((shard_id, rg), col.clone());
         Ok(col)
     }

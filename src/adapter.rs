@@ -25,10 +25,7 @@ pub enum FsError {
         source: parquet::errors::ParquetError,
     },
     #[error("io error for {url}: {source}")]
-    Io {
-        url: String,
-        source: std::io::Error,
-    },
+    Io { url: String, source: std::io::Error },
 }
 
 pub trait RangeReader: Send + Sync {
@@ -89,7 +86,10 @@ static REGISTRY: Lazy<RwLock<HashMap<String, Arc<dyn RangeReader>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub fn register(scheme: &str, adapter: Arc<dyn RangeReader>) {
-    REGISTRY.write().unwrap().insert(scheme.to_string(), adapter);
+    REGISTRY
+        .write()
+        .unwrap()
+        .insert(scheme.to_string(), adapter);
 }
 
 pub fn scheme_of(url: &str) -> &str {

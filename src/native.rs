@@ -90,8 +90,8 @@ impl NativeAdapter {
                 // Only granted when the caller asked for http:// explicitly, so
                 // an https:// URL still can't be downgraded by a redirect.
                 "http" | "https" => {
-                    let opts = object_store::ClientOptions::new()
-                        .with_allow_http(u.scheme() == "http");
+                    let opts =
+                        object_store::ClientOptions::new().with_allow_http(u.scheme() == "http");
                     Arc::new(
                         object_store::http::HttpBuilder::new()
                             .with_url(key.clone())

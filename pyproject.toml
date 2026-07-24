@@ -1,18 +1,36 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
+# >=1.8 for PEP 639 `license`/`license-files` support.
+requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "parquet-file-fs"
 version = "0.1.0"
-description = "Read-only fsspec filesystem over parquet archives (path + content columns)"
+description = "Read-only fsspec filesystem over parquet archives: browse path+content shards like a directory tree"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [{ name = "4thel00z" }]
+keywords = ["parquet", "fsspec", "filesystem", "dataset", "arrow", "rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Database",
+    "Topic :: System :: Filesystems",
+]
 dependencies = ["fsspec>=2024.2.0"]
 
-[project.optional-dependencies]
-test = ["pytest", "pyarrow"]
+[project.urls]
+Repository = "https://github.com/4thel00z/parquet-file-fs"
+Issues = "https://github.com/4thel00z/parquet-file-fs/issues"
 
 [project.entry-points."fsspec.specs"]
 pfs = "parquet_file_fs.ParquetFileSystem"
@@ -21,6 +39,15 @@ pfs = "parquet_file_fs.ParquetFileSystem"
 python-source = "python"
 module-name = "parquet_file_fs._core"
 features = ["extension-module"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.8",
+    "pytest>=8",
+    "pyarrow>=15",
+    # test_release_meta.py parses .github/workflows/release-please.yaml
+    "pyyaml>=6",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

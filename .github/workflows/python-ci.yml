@@ -1,0 +1,106 @@
+name: python-ci
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "src/**"
+      - "python/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - ".github/workflows/python-ci.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "python/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - ".github/workflows/python-ci.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.runner }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package (builds extension via maturin backend)
+        run: pip install . pytest pyarrow pyyaml
+      - name: Run integration tests
+        run: pytest -q
+
+  build:
+    name: wheel (${{ matrix.platform.runner }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: macos-latest
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist
+          manylinux: auto
+          sccache: true
+      - name: Import smoke test
+        shell: bash
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl pyarrow
+          /tmp/venv/bin/python -c "
+          import pyarrow as pa, pyarrow.parquet as pq
+          import parquet_file_fs
+          from parquet_file_fs import ParquetFileSystem
+
+          pq.write_table(
+              pa.table({
+                  'path': ['images/a.png', 'labels/a.json'],
+                  'content': [b'PNG-A', b'{}'],
+                  'route': ['agentic', 'plain'],
+              }),
+              '/tmp/shard.parquet',
+          )
+          fs = ParquetFileSystem('/tmp/shard.parquet')
+          assert fs.ls('', detail=False) == ['images', 'labels'], fs.ls('', detail=False)
+          assert fs.cat_file('images/a.png') == b'PNG-A'
+          assert fs.info('labels/a.json')['metadata'] == {'route': 'plain'}
+          assert fs.glob('**/*.json') == ['labels/a.json']
+          with fs.open('labels/a.json') as f:
+              assert f.read() == b'{}'
+          try:
+              fs.rm('labels/a.json')
+          except NotImplementedError:
+              pass
+          else:
+              raise SystemExit('expected read-only filesystem')
+          print('ok', parquet_file_fs.__version__)
+          "
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-wheels-${{ runner.os }}-${{ matrix.platform.target }}
+          path: dist
