@@ -56,6 +56,39 @@ def test_on_duplicate(tmp_path):
         Archive(sources, on_duplicate="banana")
 
 
+def test_extra_column_types(tmp_path):
+    """Extra columns of any arrow type reach metadata; only real nulls are None."""
+    import datetime
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    p = tmp_path / "meta.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "path": ["a.txt", "b.txt"],
+                "content": [b"x", b"yy"],
+                "flag": [True, False],
+                "score": [1.5, None],
+                "ts": pa.array(
+                    [datetime.datetime(2026, 1, 2, 3, 4, 5), None],
+                    type=pa.timestamp("ms"),
+                ),
+                "tags": pa.array([["p", "q"], []], type=pa.list_(pa.string())),
+            }
+        ),
+        p,
+    )
+    meta = Archive([str(p)]).info("a.txt")["metadata"]
+    assert meta["flag"] is True
+    assert meta["score"] == 1.5
+    assert "2026-01-02" in meta["ts"]  # temporal formatted, not dropped
+    assert "p" in meta["tags"] and "q" in meta["tags"]  # list formatted
+    # real nulls stay None
+    assert Archive([str(p)]).info("b.txt")["metadata"]["score"] is None
+
+
 def test_multi_row_group_reads(tmp_path):
     p = tmp_path / "rg.parquet"
     rows = [(f"f/{i}.bin", f"content-{i}".encode()) for i in range(7)]

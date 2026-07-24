@@ -98,7 +98,15 @@ fn meta_value(col: &ArrayRef, i: usize) -> MetaValue {
         DataType::Binary => prim!(BinaryArray, Bytes, |v: &[u8]| v.to_vec()),
         DataType::LargeBinary => prim!(LargeBinaryArray, Bytes, |v: &[u8]| v.to_vec()),
         DataType::BinaryView => prim!(BinaryViewArray, Bytes, |v: &[u8]| v.to_vec()),
-        _ => MetaValue::Null, // non-scalar / unsupported types
+        // Temporal, decimal, list, struct, ... — render via arrow's display
+        // formatter so the value still reaches metadata instead of vanishing.
+        _ => match arrow_cast::display::ArrayFormatter::try_new(
+            col.as_ref(),
+            &arrow_cast::display::FormatOptions::default(),
+        ) {
+            Ok(f) => MetaValue::Str(f.value(i).to_string()),
+            Err(_) => MetaValue::Null,
+        },
     }
 }
 
