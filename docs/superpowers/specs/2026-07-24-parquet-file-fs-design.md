@@ -17,6 +17,12 @@ memory.
 - **Archive mode only.** Each parquet row is one file: a path column holds the
   file's path inside the virtual tree, a content column holds its bytes.
   Directories are derived from path prefixes; they are implicit and not stored.
+- **Path canonicalization.** Paths are normalized by dropping leading/trailing
+  separators and empty segments, so `a//b`, `/a/b` and `a/b/` name the same
+  file. A row whose path normalizes to empty is an error at index-build time.
+  When a path is both a file and another path's directory prefix (`a` plus
+  `a/b`), listings show the name once as the file — `ls` then agrees with
+  `info`/`read`, and the nested children remain reachable via `find`/`glob`.
 - **Read-only.** All fsspec write/mutation methods raise
   `NotImplementedError("read-only filesystem")`.
 - **Multi-shard.** One filesystem instance may span many parquet files. The

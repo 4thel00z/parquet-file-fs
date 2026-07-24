@@ -19,6 +19,48 @@ fn normalize_strips_slashes() {
 }
 
 #[test]
+fn normalize_collapses_interior_slashes() {
+    // Doubled separators would otherwise mint phantom directories.
+    assert_eq!(normalize("a//b"), "a/b");
+    assert_eq!(normalize("/x//y///z/"), "x/y/z");
+}
+
+#[test]
+fn empty_path_row_is_rejected() {
+    // A row with no path has no valid location; left in, it shadows the root.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("empty-path.parquet");
+    write_shard(&p, &[("", b"orphan")], 100);
+    let err = build_index(
+        &[p.to_str().unwrap().to_string()],
+        None,
+        None,
+        DupPolicy::Error,
+    )
+    .err()
+    .unwrap();
+    assert!(err.to_string().contains("empty path"), "{err}");
+}
+
+#[test]
+fn file_and_dir_with_same_name_lists_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("clash.parquet");
+    write_shard(&p, &[("a", b"file-a"), ("a/b.txt", b"nested")], 100);
+    let idx = build_index(
+        &[p.to_str().unwrap().to_string()],
+        None,
+        None,
+        DupPolicy::Error,
+    )
+    .unwrap();
+    let root = idx.ls("").unwrap();
+    assert_eq!(root.len(), 1, "{root:?}");
+    assert_eq!(root[0].name, "a");
+    assert!(!root[0].is_dir, "the file wins so ls agrees with info/read");
+}
+
+#[test]
 fn locate_maps_global_rows() {
     let offsets = vec![0, 2, 4];
     assert_eq!(locate(&offsets, 0), (0, 0));

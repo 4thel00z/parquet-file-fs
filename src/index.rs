@@ -10,10 +10,17 @@ use parquet::arrow::ProjectionMask;
 use crate::adapter::{resolve, FsError};
 use crate::chunk_reader::AdapterChunkReader;
 
+/// Canonical form of a virtual path: no leading/trailing separators and no
+/// empty segments, so `a//b`, `/a/b` and `a/b/` all name the same file.
 pub fn normalize(path: &str) -> String {
-    path.trim_start_matches('/')
-        .trim_end_matches('/')
-        .to_string()
+    let mut out = String::with_capacity(path.len());
+    for seg in path.split('/').filter(|s| !s.is_empty()) {
+        if !out.is_empty() {
+            out.push('/');
+        }
+        out.push_str(seg);
+    }
+    out
 }
 
 /// Map a global row index to (row_group, row_within_group) given cumulative offsets.
@@ -119,9 +126,14 @@ impl Index {
                     is_dir: false,
                 }),
                 Some((d, _)) => {
-                    if seen_dirs.insert(d.to_string()) {
+                    let full = format!("{prefix_slash}{d}");
+                    // A path can be both a file and a directory prefix
+                    // ("a" plus "a/b"). List the name once, as the file, so
+                    // ls agrees with info/read; the children stay reachable
+                    // through find/glob.
+                    if seen_dirs.insert(d.to_string()) && !self.files.contains_key(&full) {
                         out.push(DirEntry {
-                            name: format!("{prefix_slash}{d}"),
+                            name: full,
                             is_dir: true,
                         });
                     }
@@ -279,6 +291,13 @@ pub fn build_index(
                 let norm = normalize(&raw);
                 let (row_group, row) = locate(&row_group_offsets, global);
                 global += 1;
+                if norm.is_empty() {
+                    return Err(FsError::Schema(format!(
+                        "row {} of {url} has an empty path ('{raw}'); every row must \
+                         name a file",
+                        global - 1
+                    )));
+                }
                 let entry = FileEntry {
                     loc: RowLoc {
                         shard: shard_id,
