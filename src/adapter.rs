@@ -103,7 +103,7 @@ pub fn resolve(url: &str) -> Result<Arc<dyn RangeReader>, FsError> {
     }
     match scheme {
         "file" => Ok(Arc::new(LocalAdapter)),
-        // Task 6 rewires s3/http/https to NativeAdapter.
+        "s3" | "http" | "https" => Ok(crate::native::native() as Arc<dyn RangeReader>),
         _ => Err(FsError::UnknownScheme {
             scheme: scheme.into(),
             url: url.into(),
@@ -153,6 +153,8 @@ mod tests {
         assert_eq!(scheme_of("/tmp/a"), "file");
         assert_eq!(scheme_of("s3://b/k"), "s3");
         assert!(resolve("/tmp/a").is_ok());
+        assert!(resolve("s3://bucket/key").is_ok());
+        assert!(resolve("https://example.com/x.parquet").is_ok());
         // `.err().unwrap()`, not `.unwrap_err()`: Arc<dyn RangeReader> isn't Debug.
         let err = resolve("weird://x").err().unwrap();
         let msg = err.to_string();
