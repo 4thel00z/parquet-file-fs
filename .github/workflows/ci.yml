@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rust tests
+        run: cargo test
+      - name: Set up venv
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install maturin pytest pyarrow fsspec
+      - name: Build extension
+        run: .venv/bin/maturin develop
+      - name: Python tests
+        run: .venv/bin/pytest -q

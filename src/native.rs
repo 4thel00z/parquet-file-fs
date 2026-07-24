@@ -86,12 +86,20 @@ impl NativeAdapter {
                             .map_err(|e| Self::adapter_err(u.as_str(), e))?,
                     )
                 }
-                "http" | "https" => Arc::new(
-                    object_store::http::HttpBuilder::new()
-                        .with_url(key.clone())
-                        .build()
-                        .map_err(|e| Self::adapter_err(u.as_str(), e))?,
-                ),
+                // object_store rejects cleartext http unless allow_http is set.
+                // Only granted when the caller asked for http:// explicitly, so
+                // an https:// URL still can't be downgraded by a redirect.
+                "http" | "https" => {
+                    let opts = object_store::ClientOptions::new()
+                        .with_allow_http(u.scheme() == "http");
+                    Arc::new(
+                        object_store::http::HttpBuilder::new()
+                            .with_url(key.clone())
+                            .with_client_options(opts)
+                            .build()
+                            .map_err(|e| Self::adapter_err(u.as_str(), e))?,
+                    )
+                }
                 s => {
                     return Err(FsError::UnknownScheme {
                         scheme: s.into(),
