@@ -111,7 +111,15 @@ it opens a release PR that bumps `pyproject.toml`, `Cargo.toml` (via the
 `x-release-please-version` marker) and `Cargo.lock`. Merging that PR tags the
 release and publishes wheels (linux x86_64, macOS arm64) plus an sdist to PyPI
 through Trusted Publishing — no API tokens in the repo. A failed publish can be
-re-run with `workflow_dispatch` on the `release-please` workflow.
+re-run with `workflow_dispatch` on the `release-please` workflow — that path
+also publishes the current `master` version directly, which is the way out if
+the release PR itself can't be opened.
+
+Opening that PR requires *Allow GitHub Actions to create and approve pull
+requests*, enabled at **both** the repo (Settings → Actions → General) and the
+account level (github.com/settings/actions). Where that policy is unavailable,
+add a PAT with `contents: write` + `pull-requests: write` as the
+`RELEASE_PLEASE_TOKEN` secret and the workflow uses it instead.
 
 ## License
 

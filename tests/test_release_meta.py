@@ -94,6 +94,24 @@ class TestReleaseWorkflow:
         # An API-token fallback would defeat the point of OIDC publishing.
         assert "password" not in yaml.dump(steps)
 
+    def test_manual_dispatch_survives_a_failed_gate(self) -> None:
+        """workflow_dispatch is the documented recovery path, so the publish
+        jobs must not be skipped just because the release-please job failed
+        (e.g. PR creation blocked by repo policy). Without `always()`, `needs`
+        short-circuits and the escape hatch escapes nothing."""
+        jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+        for name in ("pypi-wheels", "pypi-sdist", "publish-pypi"):
+            condition = jobs[name]["if"]
+            assert "always()" in condition, f"{name} would be skipped by a failed gate"
+            assert "workflow_dispatch" in condition, name
+
+    def test_publish_still_requires_successful_builds(self) -> None:
+        """`always()` must not let a partial dist reach PyPI: a failed wheel or
+        sdist build has to block the upload."""
+        condition = yaml.safe_load(WORKFLOW.read_text())["jobs"]["publish-pypi"]["if"]
+        assert "needs.pypi-wheels.result == 'success'" in condition
+        assert "needs.pypi-sdist.result == 'success'" in condition
+
     def test_publish_waits_for_wheels_and_sdist(self) -> None:
         """PyPI rejects a project whose first upload lacks an sdist, and a
         partial publish cannot be re-run cleanly — so both must be built

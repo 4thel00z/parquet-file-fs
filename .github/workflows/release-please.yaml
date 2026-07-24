@@ -22,6 +22,12 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: rp
         with:
+          # Opening the release PR needs "Allow GitHub Actions to create and
+          # approve pull requests" (repo AND account level: github.com/settings/actions).
+          # Where that policy can't be granted, add a PAT with `contents: write` +
+          # `pull-requests: write` as the RELEASE_PLEASE_TOKEN secret and it is
+          # used instead; unset, this falls back to the default token.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
@@ -63,7 +69,10 @@ jobs:
 
   pypi-wheels:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
+    if: |
+      always()
+      && (needs.release-please.outputs.release_created == 'true'
+          || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -92,7 +101,10 @@ jobs:
 
   pypi-sdist:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
+    if: |
+      always()
+      && (needs.release-please.outputs.release_created == 'true'
+          || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,7 +122,14 @@ jobs:
 
   publish-pypi:
     needs: [release-please, pypi-wheels, pypi-sdist]
-    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
+    # `always()` tolerates a failed release-please gate (see above) but must NOT
+    # publish a partial dist, so the build jobs are required explicitly.
+    if: |
+      always()
+      && needs.pypi-wheels.result == 'success'
+      && needs.pypi-sdist.result == 'success'
+      && (needs.release-please.outputs.release_created == 'true'
+          || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       # Trusted Publishing (OIDC) — no API token needed.
