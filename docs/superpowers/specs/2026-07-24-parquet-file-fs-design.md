@@ -85,8 +85,11 @@ fs.info("/labels/p1.json")   # {"name": ..., "size": ..., "type": "file",
 - `ParquetFileSystem(fsspec.AbstractFileSystem)` with `protocol = "pfs"`,
   registered with fsspec at import time. Implemented natively: `ls`, `info`,
   `cat_file`, `_open` (read-only file-like over fetched bytes), `exists`.
-  `glob`, `find`, `du`, `walk` are inherited from fsspec's generic
-  implementations.
+  `du` and `walk` are inherited from fsspec's generic implementations. `glob`
+  and `find` are overridden with index-only fast paths that preserve fsspec
+  semantics — the generic versions would decode content chunks just to list
+  names. `glob` with an explicit `maxdepth` falls back to the generic
+  implementation.
 - **Column mapping — convention + override.** Auto-detect path column from
   `path`, `filename`, `file_name`, `key` (first match, in that order) and content
   column from `content`, `data`, `bytes`. Constructor args `path_column=` /
