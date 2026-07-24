@@ -1,0 +1,8 @@
+/target
+/.venv
+__pycache__/
+*.so
+/dist
+Cargo.lock
+.pytest_cache/
+/.superpowers

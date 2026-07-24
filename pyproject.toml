@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "parquet-file-fs"
+version = "0.1.0"
+description = "Read-only fsspec filesystem over parquet archives (path + content columns)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["fsspec>=2024.2.0"]
+
+[project.optional-dependencies]
+test = ["pytest", "pyarrow"]
+
+[project.entry-points."fsspec.specs"]
+pfs = "parquet_file_fs.ParquetFileSystem"
+
+[tool.maturin]
+python-source = "python"
+module-name = "parquet_file_fs._core"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
