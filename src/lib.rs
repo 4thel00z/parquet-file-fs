@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 pub mod adapter;
 pub mod chunk_reader;
+pub mod index;
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
