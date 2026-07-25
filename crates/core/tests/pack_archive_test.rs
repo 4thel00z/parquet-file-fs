@@ -136,6 +136,34 @@ fn zip_slip_and_empty_archive_are_rejected() {
 }
 
 #[test]
+fn empty_archive_error_preserves_existing_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out.parquet");
+
+    // A valid pre-existing output at `out`.
+    let ar = tmp.path().join("good.zip");
+    make_zip(&ar);
+    pack_archive(&ar, None, &out, &PackOptions::default()).unwrap();
+    assert_roundtrip(&out);
+
+    // Packing an empty archive into the SAME `out` must fail without touching it.
+    let empty = tmp.path().join("empty.zip");
+    let zf = std::fs::File::create(&empty).unwrap();
+    zip::ZipWriter::new(zf).finish().unwrap();
+    let err = pack_archive(&empty, None, &out, &PackOptions::default())
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("contains no files"), "{err}");
+
+    // `out` still holds the original, valid content.
+    assert_roundtrip(&out);
+
+    // No leftover tmp file next to `out`.
+    let tmp_path = tmp.path().join("out.parquet.tmp");
+    assert!(!tmp_path.exists(), "leftover tmp file: {tmp_path:?}");
+}
+
+#[test]
 fn bare_gz_without_tar_gives_clear_error() {
     let tmp = tempfile::tempdir().unwrap();
     let ar = tmp.path().join("plain.gz");

@@ -557,7 +557,7 @@ pub fn pack_archive(
         None => sniff_format(archive)?,
     };
     let mut w = PackWriter::create(out, opts)?;
-    let res = (|| {
+    (|| {
         let open = || File::open(archive).map_err(|e| io_err(archive, e));
         match fmt {
             ArchiveFormat::Zip => pack_zip_entries(archive, &mut w)?,
@@ -579,19 +579,18 @@ pub fn pack_archive(
             ArchiveFormat::Rar => pack_rar_entries(archive, &mut w)?,
             ArchiveFormat::SevenZ => pack_7z_entries(archive, &mut w)?,
         }
-        w.finish()
-    })();
-    match res {
-        Ok(s) if s.files == 0 => {
-            let _ = std::fs::remove_file(out);
-            Err(FsError::Pack(format!(
+        // Check before finish(): finish() renames tmp -> out, so once it succeeds
+        // `out` has been overwritten. An empty archive must fail without ever
+        // touching a pre-existing `out`; dropping the unfinished `w` here cleans
+        // up only the (still-sibling) tmp file.
+        if w.files == 0 {
+            return Err(FsError::Pack(format!(
                 "archive '{}' contains no files",
                 archive.display()
-            )))
+            )));
         }
-        Ok(s) => Ok(s),
-        Err(_e) => Err(_e),
-    }
+        w.finish()
+    })()
 }
 
 #[cfg(test)]
