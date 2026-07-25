@@ -129,3 +129,59 @@ fn custom_column_names() {
     .unwrap();
     assert_eq!(a.read("a.txt").unwrap(), b"alpha");
 }
+
+#[test]
+fn failed_pack_preserves_existing_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let files = tree(tmp.path());
+    let out = tmp.path().join("out.parquet");
+
+    // Write a valid pack first
+    pack_files(&files, tmp.path(), &out, &PackOptions::default()).unwrap();
+    let original = open(&out);
+    assert_eq!(original.read("a.txt").unwrap(), b"alpha");
+
+    // Attempt to pack with duplicates into the same path
+    let dup = vec![files[0].clone(), files[0].clone()];
+    let err = pack_files(&dup, tmp.path(), &out, &PackOptions::default())
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("duplicate path"), "{err}");
+
+    // Verify original file is preserved
+    let restored = open(&out);
+    assert_eq!(restored.read("a.txt").unwrap(), b"alpha");
+    assert_eq!(restored.read("sub/b.bin").unwrap(), b"beta");
+
+    // Verify no .tmp file is left behind
+    let tmp_file = tmp.path().join("out.parquet.tmp");
+    assert!(!tmp_file.exists(), "temp file should be cleaned up");
+}
+
+#[test]
+fn successful_repack_overwrites() {
+    let tmp = tempfile::tempdir().unwrap();
+    let files1 = tree(tmp.path());
+    let out = tmp.path().join("out.parquet");
+
+    // Pack first set
+    pack_files(&files1, tmp.path(), &out, &PackOptions::default()).unwrap();
+    let first = open(&out);
+    assert_eq!(first.read("a.txt").unwrap(), b"alpha");
+
+    // Create different content and repack into same location
+    std::fs::remove_file(tmp.path().join("a.txt")).unwrap();
+    std::fs::remove_file(tmp.path().join("sub/b.bin")).unwrap();
+    std::fs::write(tmp.path().join("c.txt"), b"charlie").unwrap();
+    std::fs::write(tmp.path().join("d.txt"), b"delta").unwrap();
+    let files2 = vec![tmp.path().join("c.txt"), tmp.path().join("d.txt")];
+
+    // Repack
+    pack_files(&files2, tmp.path(), &out, &PackOptions::default()).unwrap();
+    let second = open(&out);
+    assert_eq!(second.read("c.txt").unwrap(), b"charlie");
+    assert_eq!(second.read("d.txt").unwrap(), b"delta");
+    // Original files should no longer be accessible
+    assert!(second.read("a.txt").is_err());
+    assert!(second.read("sub/b.bin").is_err());
+}

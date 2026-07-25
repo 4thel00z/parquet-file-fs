@@ -84,7 +84,8 @@ fn pq_err(path: &Path, e: parquet::errors::ParquetError) -> FsError {
 
 pub(crate) struct PackWriter {
     out: PathBuf,
-    writer: ArrowWriter<File>,
+    tmp: PathBuf,
+    writer: Option<ArrowWriter<File>>,
     schema: Arc<Schema>,
     paths: StringBuilder,
     contents: LargeBinaryBuilder,
@@ -101,15 +102,19 @@ impl PackWriter {
             Field::new(&opts.path_column, DataType::Utf8, false),
             Field::new(&opts.content_column, DataType::LargeBinary, false),
         ]));
-        let file = File::create(out).map_err(|e| io_err(out, e))?;
+        let tmp = PathBuf::from(format!("{}.tmp", out.display()));
+        let file = File::create(&tmp).map_err(|e| io_err(&tmp, e))?;
         let props = WriterProperties::builder()
             .set_compression(opts.compression.to_parquet())
             .build();
-        let writer =
-            ArrowWriter::try_new(file, schema.clone(), Some(props)).map_err(|e| pq_err(out, e))?;
+        let writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            pq_err(out, e)
+        })?;
         Ok(Self {
             out: out.to_path_buf(),
-            writer,
+            tmp,
+            writer: Some(writer),
             schema,
             paths: StringBuilder::new(),
             contents: LargeBinaryBuilder::new(),
@@ -148,22 +153,37 @@ impl PackWriter {
             ],
         )
         .map_err(|e| FsError::Schema(e.to_string()))?;
-        self.writer
-            .write(&batch)
-            .map_err(|e| pq_err(&self.out, e))?;
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| FsError::Pack("writer already closed".into()))?;
+        writer.write(&batch).map_err(|e| pq_err(&self.out, e))?;
         // ArrowWriter::flush closes the in-progress row group.
-        self.writer.flush().map_err(|e| pq_err(&self.out, e))?;
+        writer.flush().map_err(|e| pq_err(&self.out, e))?;
         self.pending = 0;
         Ok(())
     }
 
     pub(crate) fn finish(mut self) -> Result<PackSummary, FsError> {
         self.flush_row_group()?;
-        self.writer.close().map_err(|e| pq_err(&self.out, e))?;
+        let writer = self
+            .writer
+            .take()
+            .ok_or_else(|| FsError::Pack("writer already closed".into()))?;
+        writer.close().map_err(|e| pq_err(&self.out, e))?;
+        std::fs::rename(&self.tmp, &self.out).map_err(|e| io_err(&self.out, e))?;
         Ok(PackSummary {
             files: self.files,
             bytes: self.bytes,
         })
+    }
+}
+
+impl Drop for PackWriter {
+    fn drop(&mut self) {
+        // Clean up temp file if not yet renamed. If finish() succeeded, writer is None
+        // and temp file was renamed to out, so this becomes a best-effort cleanup.
+        let _ = std::fs::remove_file(&self.tmp);
     }
 }
 
@@ -206,8 +226,9 @@ pub(crate) fn stored_path(file: &Path, root: &Path) -> Result<String, FsError> {
     Ok(segs.join("/"))
 }
 
-/// Stream sorted (stored_path, source_file) pairs into `out`; removes `out`
-/// on failure so errors never leave a partial shard behind.
+/// Stream sorted (stored_path, source_file) pairs into `out`.
+/// Uses a temporary file (`out.tmp`) and atomic rename; on any error before `finish()`,
+/// the temp file is cleaned up and `out` is left untouched, preserving existing content.
 pub(crate) fn write_pairs(
     mut pairs: Vec<(String, PathBuf)>,
     out: &Path,
@@ -215,17 +236,11 @@ pub(crate) fn write_pairs(
 ) -> Result<PackSummary, FsError> {
     pairs.sort();
     let mut w = PackWriter::create(out, opts)?;
-    let res = (|| {
-        for (stored, src) in pairs {
-            let data = std::fs::read(&src).map_err(|e| io_err(&src, e))?;
-            w.append(stored, &data)?;
-        }
-        w.finish()
-    })();
-    if res.is_err() {
-        let _ = std::fs::remove_file(out);
+    for (stored, src) in pairs {
+        let data = std::fs::read(&src).map_err(|e| io_err(&src, e))?;
+        w.append(stored, &data)?;
     }
-    res
+    w.finish()
 }
 
 pub fn pack_files(
