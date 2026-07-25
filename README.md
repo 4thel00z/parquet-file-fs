@@ -108,7 +108,9 @@ always the explicit `pack-archive` call. Supported archive formats: zip,
 tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z, and rar (rar via the `rar`
 cargo feature, on by default). Output is zstd-compressed parquet
 (`--compression snappy|none` to change), one row group per ~32 MiB so
-readers stay lazy.
+readers stay lazy. Rows keep the archive's entry order, with one
+exception: 7z places zero-byte files at the end of the shard (contents
+and paths are unaffected).
 
 ## Notes
 

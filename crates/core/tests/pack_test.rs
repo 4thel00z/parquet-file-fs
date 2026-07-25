@@ -261,3 +261,34 @@ fn pack_glob_stores_matched_archives_as_bytes() {
     assert_eq!(a.paths(), vec!["bundle.zip".to_string()]);
     assert!(a.read("bundle.zip").unwrap().starts_with(b"PK"));
 }
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_output_path_roundtrips() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let files = tree(tmp.path());
+    // "out-<0xFF>.parquet" — invalid UTF-8, so a display()-built temp path
+    // would be lossy and land the .tmp sibling under a different name.
+    let out = tmp.path().join(OsStr::from_bytes(b"out-\xff.parquet"));
+    match pack_files(&files, tmp.path(), &out, &PackOptions::default()) {
+        // APFS refuses to create non-UTF-8 filenames at all (EILSEQ), so the
+        // scenario is only constructible on linux (ext4 & friends).
+        Err(_) if cfg!(target_os = "macos") => return,
+        r => r.unwrap(),
+    };
+    // Archive::open takes string URLs, so validate via the parquet reader.
+    use parquet::file::reader::FileReader;
+    let reader =
+        parquet::file::reader::SerializedFileReader::new(std::fs::File::open(&out).unwrap())
+            .unwrap();
+    assert_eq!(reader.metadata().file_metadata().num_rows(), 2);
+    let stray: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().as_encoded_bytes().ends_with(b".tmp"))
+        .collect();
+    assert!(stray.is_empty(), "leftover temp files: {stray:?}");
+}

@@ -128,7 +128,10 @@ pub fn pack_archive(archive: &Path, format: Option<ArchiveFormat>,
   symlinks, hardlinks and special entries are skipped.
 - **Order:** entries are written in archive order (already deterministic
   for a given archive; avoids a second decompression pass for tar
-  streams).
+  streams). Known 7z exception: sevenz-rust2 yields non-empty entries in
+  block order first and zero-byte entries last, so empty files land at the
+  end of the shard; contents and paths are unaffected, and the reader is
+  path-indexed.
 - **Dependencies:** `zip`, `tar`, `flate2` (gz), `bzip2` (bz2),
   `liblzma`/`xz2` (xz), `zstd` (zst), `sevenz-rust2` (7z, pure Rust — no
   feature gate needed) in core. **Rar** uses the `unrar`

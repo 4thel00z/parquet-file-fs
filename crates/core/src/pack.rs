@@ -103,7 +103,11 @@ impl PackWriter {
             Field::new(&opts.path_column, DataType::Utf8, false),
             Field::new(&opts.content_column, DataType::LargeBinary, false),
         ]));
-        let tmp = PathBuf::from(format!("{}.tmp", out.display()));
+        // Append to the OS string, not a `display()` render: display is lossy
+        // for non-UTF-8 paths and would place the temp file elsewhere.
+        let mut tmp_os = out.as_os_str().to_owned();
+        tmp_os.push(".tmp");
+        let tmp = PathBuf::from(tmp_os);
         let file = File::create(&tmp).map_err(|e| io_err(&tmp, e))?;
         let props = WriterProperties::builder()
             .set_compression(opts.compression.to_parquet())
@@ -182,8 +186,11 @@ impl PackWriter {
 
 impl Drop for PackWriter {
     fn drop(&mut self) {
-        // Clean up temp file if not yet renamed. If finish() succeeded, writer is None
-        // and temp file was renamed to out, so this becomes a best-effort cleanup.
+        // Close the file handle before the unlink: some platforms (Windows)
+        // refuse to delete a file that is still open. If finish() succeeded,
+        // writer is already None and the temp file was renamed to out, so
+        // this becomes a best-effort no-op.
+        drop(self.writer.take());
         let _ = std::fs::remove_file(&self.tmp);
     }
 }
