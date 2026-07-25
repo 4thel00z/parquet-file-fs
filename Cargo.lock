@@ -1599,7 +1599,7 @@ dependencies = [
 
 [[package]]
 name = "parquet-file-fs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow-array",
  "arrow-cast",
@@ -1628,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "parquet-file-fs-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "parquet-file-fs",
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "parquet-file-fs-py"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "parquet-file-fs",
