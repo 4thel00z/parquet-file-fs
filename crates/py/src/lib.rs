@@ -2,18 +2,21 @@ use pyo3::exceptions::{PyFileNotFoundError, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use pyo3::IntoPyObjectExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parquet_file_fs::adapter::{FsError, RangeReader};
 use parquet_file_fs::archive::InfoResult;
 use parquet_file_fs::index::{normalize, DupPolicy, MetaValue};
+use parquet_file_fs::pack::{self, ArchiveFormat, PackCompression, PackOptions, PackSummary};
 
 fn to_py(e: FsError) -> PyErr {
     match &e {
         FsError::NotFound(_) => PyFileNotFoundError::new_err(e.to_string()),
-        FsError::Schema(_) | FsError::UnknownScheme { .. } | FsError::Duplicate { .. } => {
-            PyValueError::new_err(e.to_string())
-        }
+        FsError::Schema(_)
+        | FsError::UnknownScheme { .. }
+        | FsError::Duplicate { .. }
+        | FsError::Pack(_) => PyValueError::new_err(e.to_string()),
         _ => PyIOError::new_err(e.to_string()),
     }
 }
@@ -159,10 +162,97 @@ impl PyArchive {
     }
 }
 
+fn build_opts(path_column: &str, content_column: &str, compression: &str) -> PyResult<PackOptions> {
+    Ok(PackOptions {
+        path_column: path_column.to_string(),
+        content_column: content_column.to_string(),
+        compression: PackCompression::parse(compression).map_err(to_py)?,
+        ..PackOptions::default()
+    })
+}
+
+fn summary_to_py(py: Python<'_>, s: PackSummary, out: &str) -> PyResult<PyObject> {
+    let d = PyDict::new(py);
+    d.set_item("files", s.files)?;
+    d.set_item("bytes", s.bytes)?;
+    d.set_item("path", out)?;
+    Ok(d.into_any().unbind())
+}
+
+#[pyfunction]
+#[pyo3(signature = (pattern, out, root=None, path_column="path", content_column="content", compression="zstd"))]
+fn pack_glob(
+    py: Python<'_>,
+    pattern: &str,
+    out: &str,
+    root: Option<String>,
+    path_column: &str,
+    content_column: &str,
+    compression: &str,
+) -> PyResult<PyObject> {
+    let opts = build_opts(path_column, content_column, compression)?;
+    let s = py
+        .allow_threads(|| {
+            pack::pack_glob(
+                pattern,
+                root.as_deref().map(Path::new),
+                Path::new(out),
+                &opts,
+            )
+        })
+        .map_err(to_py)?;
+    summary_to_py(py, s, out)
+}
+
+#[pyfunction]
+#[pyo3(signature = (paths, out, root, path_column="path", content_column="content", compression="zstd"))]
+fn pack_files(
+    py: Python<'_>,
+    paths: Vec<String>,
+    out: &str,
+    root: &str,
+    path_column: &str,
+    content_column: &str,
+    compression: &str,
+) -> PyResult<PyObject> {
+    let opts = build_opts(path_column, content_column, compression)?;
+    let bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    let s = py
+        .allow_threads(|| pack::pack_files(&bufs, Path::new(root), Path::new(out), &opts))
+        .map_err(to_py)?;
+    summary_to_py(py, s, out)
+}
+
+#[pyfunction]
+#[pyo3(signature = (archive, out, format=None, path_column="path", content_column="content", compression="zstd"))]
+fn pack_archive(
+    py: Python<'_>,
+    archive: &str,
+    out: &str,
+    format: Option<String>,
+    path_column: &str,
+    content_column: &str,
+    compression: &str,
+) -> PyResult<PyObject> {
+    let fmt = format
+        .as_deref()
+        .map(ArchiveFormat::parse)
+        .transpose()
+        .map_err(to_py)?;
+    let opts = build_opts(path_column, content_column, compression)?;
+    let s = py
+        .allow_threads(|| pack::pack_archive(Path::new(archive), fmt, Path::new(out), &opts))
+        .map_err(to_py)?;
+    summary_to_py(py, s, out)
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyArchive>()?;
     m.add_function(wrap_pyfunction!(register_adapter, m)?)?;
+    m.add_function(wrap_pyfunction!(pack_glob, m)?)?;
+    m.add_function(wrap_pyfunction!(pack_files, m)?)?;
+    m.add_function(wrap_pyfunction!(pack_archive, m)?)?;
     Ok(())
 }
