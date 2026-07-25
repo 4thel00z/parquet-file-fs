@@ -1,4 +1,4 @@
-# Design: `pack` — create parquet archives from a glob or zip
+# Design: `pack` — create parquet archives from a glob or archive file
 
 **Date:** 2026-07-25
 **Status:** Approved
@@ -7,15 +7,23 @@
 
 parquet-file-fs reads parquet "archive" shards (one row per file: a path
 column + a content column) but offers no way to create them. Users need to
-pack files — matched by a glob, listed explicitly, or contained in a zip
-archive — into a shard that `ParquetFileSystem` can read.
+pack files — matched by a glob, listed explicitly, or contained in an
+archive file (zip, tar, tar.gz, rar, …) — into a shard that
+`ParquetFileSystem` can read.
 
 ## Decision summary
 
 - Packing logic lives in the Rust core and is exposed twice: a Rust CLI
-  binary (`pfs`) and a Python function (`parquet_file_fs.pack`).
+  binary (`pfs`) and Python functions (`parquet_file_fs.pack` /
+  `pack_archive`).
 - The repo becomes a cargo workspace with three crates: core, py (pyo3
   extension), cli.
+- **No source-type magic.** A glob stores exactly what it matches — a
+  matched `.zip` is stored as a file like any other. Expanding an archive
+  is always an explicit call (`pack_archive` / `pfs pack-archive`).
+- `pack_archive` handles multiple formats (zip, tar, tar.{gz,bz2,xz,zst},
+  rar) with format detection by magic bytes inside the explicit call, plus
+  a manual override.
 - Output is a single parquet file (no sharding); sharding can be added
   later without breaking the API.
 
@@ -61,58 +69,95 @@ pub struct PackOptions {
 
 pub struct PackSummary { pub files: u64, pub bytes: u64 }
 
+pub enum ArchiveFormat { Zip, Tar, TarGz, TarBz2, TarXz, TarZst, Rar }
+
 pub fn pack_glob(pattern: &str, root: Option<&Path>, out: &Path,
                  opts: &PackOptions) -> Result<PackSummary, FsError>;
 pub fn pack_files(paths: &[PathBuf], root: &Path, out: &Path,
                   opts: &PackOptions) -> Result<PackSummary, FsError>;
-pub fn pack_zip(zip: &Path, out: &Path,
-                opts: &PackOptions) -> Result<PackSummary, FsError>;
+pub fn pack_archive(archive: &Path, format: Option<ArchiveFormat>,
+                    out: &Path, opts: &PackOptions)
+                    -> Result<PackSummary, FsError>;
 ```
 
-### Semantics
+### Shared semantics
 
 - **Schema:** `path: Utf8` (non-null) + `content: LargeBinary` (non-null) —
   types the existing reader auto-detects. Column names come from
   `PackOptions` so odd archives can be produced for interop.
-- **Root / stored paths (glob & files):** stored path = source path made
-  relative to `root`, separators normalized to `/`. Default root for
-  `pack_glob` is the pattern's wildcard-free directory prefix
+- **Streaming:** entries are read one at a time into arrow builders
+  (`StringBuilder` + `LargeBinaryBuilder`); a row group is flushed whenever
+  accumulated content reaches `max_row_group_bytes`. Peak memory ≈
+  threshold + largest single entry. 32 MiB default keeps the reader's lazy
+  per-row-group decode cheap.
+- **Compression:** parquet page compression, zstd by default; `snappy` and
+  `none` selectable.
+- **Duplicates:** two inputs normalizing to the same stored path → error
+  (mirrors the reader's default duplicate policy).
+- **Empty input:** zero matched files / entries → error ("no files
+  matched" / "archive contains no files").
+
+### Glob & file-list sources
+
+- **Root / stored paths:** stored path = source path made relative to
+  `root`, separators normalized to `/`. Default root for `pack_glob` is
+  the pattern's wildcard-free directory prefix
   (`data/images/**/*.png` → root `data/images`, stored `a/x.png`); the
   current directory when the pattern has no fixed prefix. `pack_files`
   requires an explicit root. A matched file that does not live under root
   is an error.
-- **Glob expansion:** via the `glob` crate. Only regular files are stored;
-  directories are skipped; symlinks to files are read through.
-- **Zip:** entry names are stored verbatim after normalization (forward
+- **Expansion:** via the `glob` crate. Only regular files are stored;
+  directories are skipped; symlinks to files are read through. Matched
+  archive files (zip/tar/…) are stored as ordinary file content — no
+  expansion.
+- **Determinism:** matched paths are sorted lexicographically before
+  writing (filesystem traversal order is not stable).
+
+### Archive sources (`pack_archive`)
+
+- **Formats:** zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, rar.
+- **Detection:** by magic bytes (zip `PK`, gzip `1f 8b`, bzip2 `BZh`, xz,
+  zstd, rar `Rar!`; tar via `ustar` at offset 257), with file extension as
+  tie-breaker. A compressed stream (gz/bz2/xz/zst) is assumed to contain a
+  tar; a bare compressed non-tar file fails with a clear message. The
+  `format` parameter overrides detection.
+- **Stored paths:** entry names verbatim after normalization (forward
   slashes, strip any leading `/`, reject entries containing `..`
-  components or whose name normalizes to empty). Directory entries are
-  skipped. Uses the `zip` crate (new core dependency).
-- **Determinism:** entries are sorted lexicographically by stored path
-  before writing.
-- **Duplicates:** two inputs normalizing to the same stored path → error
-  (mirrors the reader's default duplicate policy).
-- **Empty input:** a glob matching zero files, an empty path list, or a
-  zip with no file entries → error ("no files matched").
-- **Streaming:** files are read one at a time into arrow builders
-  (`StringBuilder` + `LargeBinaryBuilder`); a row group is flushed whenever
-  accumulated content reaches `max_row_group_bytes`. Peak memory ≈
-  threshold + largest single file. 32 MiB default keeps the reader's lazy
-  per-row-group decode cheap.
-- **Compression:** parquet page compression, zstd by default; `snappy` and
-  `none` selectable.
+  components or whose name normalizes to empty).
+- **Entry filtering:** only regular file entries are stored; directories,
+  symlinks, hardlinks and special entries are skipped.
+- **Order:** entries are written in archive order (already deterministic
+  for a given archive; avoids a second decompression pass for tar
+  streams).
+- **Dependencies:** `zip`, `tar`, `flate2` (gz), `bzip2` (bz2),
+  `liblzma`/`xz2` (xz), `zstd` (zst) in core. **Rar** uses the `unrar`
+  crate (bindings to the vendored unrar C++ library; its license permits
+  decompression use but is not OSI-approved) behind a core cargo feature
+  `rar`, enabled by default in the cli and py crates. Without the feature,
+  rar input fails with "rar support not compiled in". If the C++ build
+  proves problematic in wheel CI, the feature ships off in wheels and the
+  error message points to the CLI.
 
 ## 3. CLI (`pfs`)
 
 ```
-pfs pack <SOURCE> <OUT.parquet>
+pfs pack <GLOB|DIR> <OUT.parquet>
          [--root DIR]
+         [--path-column NAME] [--content-column NAME]
+         [--compression zstd|snappy|none]
+
+pfs pack-archive <ARCHIVE> <OUT.parquet>
+         [--format zip|tar|tar.gz|tar.bz2|tar.xz|tar.zst|rar]
          [--path-column NAME] [--content-column NAME]
          [--compression zstd|snappy|none]
 ```
 
-- `SOURCE` auto-detection, in order: existing file ending in `.zip` → zip
-  mode (`--root` is rejected in zip mode); existing directory → pack
-  `dir/**` with root = dir; otherwise treated as a glob pattern.
+- `pfs pack`: an existing directory is shorthand for `dir/**` with
+  root = dir (a directory cannot itself be stored, so this is not
+  ambiguous); anything else is a glob pattern. Archive files matched by
+  the glob are stored as bytes, never expanded.
+- `pfs pack-archive`: explicitly expands one archive file; format detected
+  from magic bytes unless `--format` is given.
 - Success prints a one-line summary (`packed N files (M bytes) -> out`);
   errors print to stderr and exit 1.
 - Arg parsing with `clap` (cli crate only; wheel and core stay lean).
@@ -120,19 +165,24 @@ pfs pack <SOURCE> <OUT.parquet>
 ## 4. Python API
 
 ```python
-from parquet_file_fs import pack
+from parquet_file_fs import pack, pack_archive
 
 pack("data/images/**/*.png", "out.parquet", root="data")
-pack("bundle.zip", "out.parquet")
 pack(["a.txt", "b.txt"], "out.parquet", root=".")
+pack_archive("bundle.tar.gz", "out.parquet")
+pack_archive("weird-extension.bin", "out.parquet", format="zip")
 ```
 
 - `pack(source, out, *, root=None, path_column="path",
-  content_column="content", compression="zstd")`.
-- `source`: `str` (same auto-detection as the CLI) or `list[str]`
-  (explicit files; `root` required, matching `pack_files`).
-- Returns `{"files": n, "bytes": total, "path": out}`.
-- Implemented as a pyo3 function in the py crate, wrapped in a small
+  content_column="content", compression="zstd")` — `source` is a glob
+  string, an existing directory (shorthand for `dir/**`), or a list of
+  files (`root` required). Never expands archives.
+- `pack_archive(archive, out, *, format=None, path_column="path",
+  content_column="content", compression="zstd")` — `format` is one of
+  `"zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" | "rar"`,
+  default auto-detect by magic bytes.
+- Both return `{"files": n, "bytes": total, "path": out}`.
+- Implemented as pyo3 functions in the py crate, wrapped in a small
   `python/parquet_file_fs/pack.py`, re-exported from `__init__.py`.
 - Errors map through the existing `to_py`: bad input → `ValueError`,
   I/O failures → `OSError`, missing files → `FileNotFoundError`.
@@ -140,33 +190,42 @@ pack(["a.txt", "b.txt"], "out.parquet", root=".")
 ## 5. Error handling
 
 Reuse `FsError`, adding variants only where existing ones don't fit
-(e.g. `Pack(String)` for duplicate/empty/outside-root cases if `Schema`
-reads wrong). The CLI maps any error to exit code 1 with the display
-message; Python inherits the existing exception mapping.
+(e.g. `Pack(String)` for duplicate/empty/outside-root/unsupported-format
+cases if `Schema` reads wrong). The CLI maps any error to exit code 1 with
+the display message; Python inherits the existing exception mapping.
 
 ## 6. Testing
 
-- **Rust (core):** pack → read back through the existing `Archive`
-  (glob, explicit files, zip); duplicate-path error; empty-match error;
-  outside-root error; zip `..` rejection; row-group flushing verified with
-  a tiny `max_row_group_bytes`; compression options produce readable files.
+- **Rust (core):** pack → read back through the existing `Archive` for
+  glob, explicit files, and each archive format (fixtures generated in the
+  test via the same third-party crates); format auto-detection incl.
+  extension-vs-magic disagreement; duplicate-path error; empty-match
+  error; outside-root error; `..` entry rejection; non-regular entries
+  skipped; row-group flushing verified with a tiny `max_row_group_bytes`;
+  compression options produce readable files. Rar round-trip runs only
+  with the `rar` feature (fixture checked in — rar cannot be created by
+  the test).
 - **Rust (cli):** integration test spawning `CARGO_BIN_EXE_pfs` — happy
-  path per source kind, exit codes and stderr on failure.
-- **Python:** `pack()` then `ParquetFileSystem` round-trip for glob, list
-  and zip inputs; error-mapping cases.
+  path for glob, dir and archive sources; exit codes and stderr on
+  failure.
+- **Python:** `pack()` / `pack_archive()` then `ParquetFileSystem`
+  round-trip; a `.zip` matched by a glob is stored as bytes, not expanded;
+  error-mapping cases.
 - **Existing suites** (index/archive/fs/adapters/http) must pass unchanged
   after the workspace move.
 
 ## 7. Documentation
 
-README gains a "Creating archives" section covering `pfs pack` (with
-`cargo install parquet-file-fs-cli`) and `parquet_file_fs.pack`, plus notes
-on root/stored-path behavior. Development section updated for the
-workspace layout.
+README gains a "Creating archives" section covering `pfs pack` /
+`pfs pack-archive` (with `cargo install parquet-file-fs-cli`) and
+`parquet_file_fs.pack` / `pack_archive`, plus notes on root/stored-path
+behavior and supported archive formats. Development section updated for
+the workspace layout.
 
 ## Out of scope
 
 - Sharded output (`--max-shard-bytes`) — single file only for now.
 - Extra metadata columns (size, mtime, mime) — path + content only.
-- Packing from remote sources (s3/http) — local files and zips only.
-- tar/tar.gz input.
+- Packing from remote sources (s3/http) — local files and archives only.
+- 7z input (pure-rust `sevenz-rust2` exists; add later if needed).
+- Nested expansion (archives inside archives).
