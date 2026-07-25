@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use parquet_file_fs::archive::Archive;
 use parquet_file_fs::index::DupPolicy;
-use parquet_file_fs::pack::{pack_files, PackCompression, PackOptions};
+use parquet_file_fs::pack::{pack_files, pack_glob, PackCompression, PackOptions};
 
 fn open(out: &Path) -> Archive {
     Archive::open(
@@ -184,4 +184,80 @@ fn successful_repack_overwrites() {
     // Original files should no longer be accessible
     assert!(second.read("a.txt").is_err());
     assert!(second.read("sub/b.bin").is_err());
+}
+
+#[test]
+fn pack_glob_roundtrip_with_inferred_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    tree(&data);
+    let out = tmp.path().join("out.parquet");
+    let pattern = format!("{}/**/*", data.display());
+    let s = pack_glob(&pattern, None, &out, &PackOptions::default()).unwrap();
+    assert_eq!(s.files, 2);
+    let a = open(&out);
+    // root inferred as `<tmp>/data`, so paths are relative to it
+    assert_eq!(
+        a.paths(),
+        vec!["a.txt".to_string(), "sub/b.bin".to_string()]
+    );
+}
+
+#[test]
+fn pack_glob_explicit_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    tree(&data);
+    let out = tmp.path().join("out.parquet");
+    let pattern = format!("{}/**/*", data.display());
+    pack_glob(&pattern, Some(tmp.path()), &out, &PackOptions::default()).unwrap();
+    let a = open(&out);
+    assert_eq!(
+        a.paths(),
+        vec!["data/a.txt".to_string(), "data/sub/b.bin".to_string()]
+    );
+}
+
+#[test]
+fn pack_glob_directory_shorthand() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    tree(&data);
+    let out = tmp.path().join("out.parquet");
+    let s = pack_glob(data.to_str().unwrap(), None, &out, &PackOptions::default()).unwrap();
+    assert_eq!(s.files, 2);
+    assert_eq!(open(&out).read("sub/b.bin").unwrap(), b"beta");
+}
+
+#[test]
+fn pack_glob_no_match_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out.parquet");
+    let pattern = format!("{}/nope/**/*", tmp.path().display());
+    let err = pack_glob(&pattern, None, &out, &PackOptions::default())
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("no files matched"), "{err}");
+    assert!(!out.exists());
+}
+
+#[test]
+fn pack_glob_stores_matched_archives_as_bytes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    // minimal zip built with the zip crate (a dependency from Task 4 — for
+    // Task 3, write literal bytes instead: an empty-zip magic is enough)
+    std::fs::write(data.join("bundle.zip"), b"PK\x05\x06 not really a full zip").unwrap();
+    let out = tmp.path().join("out.parquet");
+    pack_glob(
+        &format!("{}/**/*", data.display()),
+        None,
+        &out,
+        &PackOptions::default(),
+    )
+    .unwrap();
+    let a = open(&out);
+    assert_eq!(a.paths(), vec!["bundle.zip".to_string()]);
+    assert!(a.read("bundle.zip").unwrap().starts_with(b"PK"));
 }

@@ -265,3 +265,74 @@ pub fn pack_files(
     }
     write_pairs(pairs, out, opts)
 }
+
+/// Longest wildcard-free directory prefix of a glob pattern; the last
+/// segment never counts (a concrete filename is not its own root).
+fn glob_fixed_prefix(pattern: &str) -> PathBuf {
+    let segs: Vec<&str> = pattern.split('/').collect();
+    let mut prefix = PathBuf::new();
+    for (i, seg) in segs.iter().enumerate() {
+        if i + 1 == segs.len() || seg.contains(['*', '?', '[']) {
+            break;
+        }
+        if seg.is_empty() {
+            prefix.push("/"); // leading empty segment of an absolute pattern
+            continue;
+        }
+        prefix.push(seg);
+    }
+    prefix
+}
+
+pub fn pack_glob(
+    pattern: &str,
+    root: Option<&Path>,
+    out: &Path,
+    opts: &PackOptions,
+) -> Result<PackSummary, FsError> {
+    let (pattern, default_root) = if Path::new(pattern).is_dir() {
+        let dir = pattern.trim_end_matches('/');
+        (format!("{dir}/**/*"), PathBuf::from(dir))
+    } else {
+        (pattern.to_string(), glob_fixed_prefix(pattern))
+    };
+    let root = root.map(Path::to_path_buf).unwrap_or(default_root);
+    let mut pairs = Vec::new();
+    for entry in glob::glob(&pattern)
+        .map_err(|e| FsError::Pack(format!("bad glob pattern '{pattern}': {e}")))?
+    {
+        let p = entry.map_err(|e| {
+            let path = e.path().display().to_string();
+            FsError::Io {
+                url: path,
+                source: e.into(),
+            }
+        })?;
+        if p.is_file() {
+            pairs.push((stored_path(&p, &root)?, p));
+        }
+    }
+    if pairs.is_empty() {
+        return Err(FsError::Pack(format!("no files matched '{pattern}'")));
+    }
+    write_pairs(pairs, out, opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixed_prefix_of_patterns() {
+        assert_eq!(
+            glob_fixed_prefix("data/images/**/*.png"),
+            PathBuf::from("data/images")
+        );
+        assert_eq!(glob_fixed_prefix("*.txt"), PathBuf::new());
+        assert_eq!(glob_fixed_prefix("a/b/c.txt"), PathBuf::from("a/b"));
+        assert_eq!(
+            glob_fixed_prefix("/abs/dir/*.bin"),
+            PathBuf::from("/abs/dir")
+        );
+    }
+}
