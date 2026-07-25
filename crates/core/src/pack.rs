@@ -479,13 +479,59 @@ fn pack_tar_entries<R: Read>(reader: R, archive: &Path, w: &mut PackWriter) -> R
     Ok(())
 }
 
-// Replaced with real readers in Task 5.
-fn pack_rar_entries(_archive: &Path, _w: &mut PackWriter) -> Result<(), FsError> {
-    Err(FsError::Pack("rar support not implemented yet".into()))
+fn pack_7z_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
+    let bad = |e: String| FsError::Pack(format!("failed to read 7z '{}': {e}", archive.display()));
+    let mut r = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
+        .map_err(|e| bad(e.to_string()))?;
+    let mut inner: Result<(), FsError> = Ok(());
+    r.for_each_entries(
+        &mut |entry: &sevenz_rust2::ArchiveEntry, reader: &mut dyn Read| {
+            if entry.is_directory() {
+                std::io::copy(reader, &mut std::io::sink())?;
+                return Ok(true);
+            }
+            let mut data = Vec::new();
+            reader.read_to_end(&mut data)?;
+            match entry_stored_path(entry.name()).and_then(|p| w.append(p, &data)) {
+                Ok(()) => Ok(true),
+                Err(e) => {
+                    inner = Err(e);
+                    Ok(false) // stop iterating; surface `inner` below
+                }
+            }
+        },
+    )
+    .map_err(|e| bad(e.to_string()))?;
+    inner
 }
 
-fn pack_7z_entries(_archive: &Path, _w: &mut PackWriter) -> Result<(), FsError> {
-    Err(FsError::Pack("7z support not implemented yet".into()))
+#[cfg(feature = "rar")]
+fn pack_rar_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
+    let bad = |e: String| FsError::Pack(format!("failed to read rar '{}': {e}", archive.display()));
+    let mut ar = unrar::Archive::new(archive)
+        .open_for_processing()
+        .map_err(|e| bad(e.to_string()))?;
+    while let Some(header) = ar.read_header().map_err(|e| bad(e.to_string()))? {
+        let is_file = header.entry().is_file();
+        let raw = header.entry().filename.to_string_lossy().into_owned();
+        ar = if is_file {
+            let (data, next) = header.read().map_err(|e| bad(e.to_string()))?;
+            w.append(entry_stored_path(&raw)?, &data)?;
+            next
+        } else {
+            header.skip().map_err(|e| bad(e.to_string()))?
+        };
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "rar"))]
+fn pack_rar_entries(_archive: &Path, _w: &mut PackWriter) -> Result<(), FsError> {
+    Err(FsError::Pack(
+        "rar support not compiled in; rebuild with the 'rar' feature or \
+         install the CLI (cargo install parquet-file-fs-cli)"
+            .into(),
+    ))
 }
 
 pub fn pack_archive(

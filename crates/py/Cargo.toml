@@ -12,7 +12,8 @@ name = "parquet_file_fs_py"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["rar"]
+rar = ["parquet-file-fs/rar"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]

@@ -161,3 +161,44 @@ fn unknown_format_is_an_error() {
     assert!(err.to_string().contains("could not detect"), "{err}");
     assert!(ArchiveFormat::parse("tar.lol").is_err());
 }
+
+#[test]
+fn sevenz_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(src.join("sub")).unwrap();
+    std::fs::write(src.join("a.txt"), b"alpha").unwrap();
+    std::fs::write(src.join("sub/b.bin"), b"beta").unwrap();
+    let ar = tmp.path().join("simple.7z");
+    sevenz_rust2::compress_to_path(&src, &ar).unwrap();
+    let out = tmp.path().join("out.parquet");
+    pack_archive(&ar, None, &out, &PackOptions::default()).unwrap();
+    assert_roundtrip(&out);
+}
+
+#[cfg(feature = "rar")]
+#[test]
+#[ignore = "requires fixtures/simple.rar (see fixtures/README.md)"]
+fn rar_roundtrip_from_fixture() {
+    let ar = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/simple.rar");
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out.parquet");
+    pack_archive(&ar, None, &out, &PackOptions::default()).unwrap();
+    assert_roundtrip(&out);
+}
+
+#[cfg(not(feature = "rar"))]
+#[test]
+fn rar_without_feature_gives_clear_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ar = tmp.path().join("x.rar");
+    std::fs::write(&ar, b"Rar!\x1a\x07\x01\x00rest").unwrap();
+    let out = tmp.path().join("out.parquet");
+    let err = pack_archive(&ar, None, &out, &PackOptions::default())
+        .err()
+        .unwrap();
+    assert!(
+        err.to_string().contains("rar support not compiled in"),
+        "{err}"
+    );
+}
