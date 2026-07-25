@@ -1,0 +1,21 @@
+[package]
+name = "parquet-file-fs-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pyo3 extension module for parquet-file-fs"
+publish = false
+
+[lib]
+name = "parquet_file_fs_py"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+parquet-file-fs = { path = "../core" }
+pyo3 = { version = "0.25", features = ["abi3-py39"] }
+bytes = "1"

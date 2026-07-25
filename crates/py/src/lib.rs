@@ -4,9 +4,9 @@ use pyo3::types::{PyBytes, PyDict};
 use pyo3::IntoPyObjectExt;
 use std::sync::Arc;
 
-use crate::adapter::{FsError, RangeReader};
-use crate::archive::InfoResult;
-use crate::index::{normalize, DupPolicy, MetaValue};
+use parquet_file_fs::adapter::{FsError, RangeReader};
+use parquet_file_fs::archive::InfoResult;
+use parquet_file_fs::index::{normalize, DupPolicy, MetaValue};
 
 fn to_py(e: FsError) -> PyErr {
     match &e {
@@ -75,12 +75,12 @@ impl RangeReader for PyAdapter {
 
 #[pyfunction]
 pub fn register_adapter(scheme: &str, adapter: Py<PyAny>) {
-    crate::adapter::register(scheme, Arc::new(PyAdapter { obj: adapter }));
+    parquet_file_fs::adapter::register(scheme, Arc::new(PyAdapter { obj: adapter }));
 }
 
 #[pyclass(frozen, name = "Archive")]
 pub struct PyArchive {
-    inner: crate::archive::Archive,
+    inner: parquet_file_fs::archive::Archive,
 }
 
 #[pymethods]
@@ -97,7 +97,7 @@ impl PyArchive {
         let policy = DupPolicy::parse(on_duplicate).map_err(to_py)?;
         let inner = py
             .allow_threads(|| {
-                crate::archive::Archive::open(
+                parquet_file_fs::archive::Archive::open(
                     &sources,
                     path_column.as_deref(),
                     content_column.as_deref(),
@@ -157,4 +157,12 @@ impl PyArchive {
     fn dirs(&self) -> Vec<String> {
         self.inner.dirs()
     }
+}
+
+#[pymodule]
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add_class::<PyArchive>()?;
+    m.add_function(wrap_pyfunction!(register_adapter, m)?)?;
+    Ok(())
 }

@@ -1335,11 +1335,19 @@ dependencies = [
  "object_store",
  "once_cell",
  "parquet",
- "pyo3",
  "tempfile",
  "thiserror",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "parquet-file-fs-py"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "parquet-file-fs",
+ "pyo3",
 ]
 
 [[package]]
