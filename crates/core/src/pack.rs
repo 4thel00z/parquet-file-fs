@@ -480,6 +480,9 @@ fn pack_tar_entries<R: Read>(reader: R, archive: &Path, w: &mut PackWriter) -> R
 }
 
 fn pack_7z_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
+    // sevenz-rust2's `for_each_entries` yields non-empty files in block order first,
+    // then zero-byte files at the end — so empty files land after non-empty ones in
+    // the shard (data is correct, only the row order deviates from archive order).
     let bad = |e: String| FsError::Pack(format!("failed to read 7z '{}': {e}", archive.display()));
     let mut r = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
         .map_err(|e| bad(e.to_string()))?;
