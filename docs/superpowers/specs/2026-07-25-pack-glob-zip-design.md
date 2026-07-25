@@ -22,8 +22,8 @@ archive file (zip, tar, tar.gz, rar, …) — into a shard that
   matched `.zip` is stored as a file like any other. Expanding an archive
   is always an explicit call (`pack_archive` / `pfs pack-archive`).
 - `pack_archive` handles multiple formats (zip, tar, tar.{gz,bz2,xz,zst},
-  rar) with format detection by magic bytes inside the explicit call, plus
-  a manual override.
+  rar, 7z) with format detection by magic bytes inside the explicit call,
+  plus a manual override.
 - Output is a single parquet file (no sharding); sharding can be added
   later without breaking the API.
 
@@ -69,7 +69,7 @@ pub struct PackOptions {
 
 pub struct PackSummary { pub files: u64, pub bytes: u64 }
 
-pub enum ArchiveFormat { Zip, Tar, TarGz, TarBz2, TarXz, TarZst, Rar }
+pub enum ArchiveFormat { Zip, Tar, TarGz, TarBz2, TarXz, TarZst, Rar, SevenZ }
 
 pub fn pack_glob(pattern: &str, root: Option<&Path>, out: &Path,
                  opts: &PackOptions) -> Result<PackSummary, FsError>;
@@ -115,10 +115,10 @@ pub fn pack_archive(archive: &Path, format: Option<ArchiveFormat>,
 
 ### Archive sources (`pack_archive`)
 
-- **Formats:** zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, rar.
+- **Formats:** zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, rar, 7z.
 - **Detection:** by magic bytes (zip `PK`, gzip `1f 8b`, bzip2 `BZh`, xz,
-  zstd, rar `Rar!`; tar via `ustar` at offset 257), with file extension as
-  tie-breaker. A compressed stream (gz/bz2/xz/zst) is assumed to contain a
+  zstd, rar `Rar!`, 7z `37 7A BC AF 27 1C`; tar via `ustar` at offset
+  257), with file extension as tie-breaker. A compressed stream (gz/bz2/xz/zst) is assumed to contain a
   tar; a bare compressed non-tar file fails with a clear message. The
   `format` parameter overrides detection.
 - **Stored paths:** entry names verbatim after normalization (forward
@@ -130,7 +130,8 @@ pub fn pack_archive(archive: &Path, format: Option<ArchiveFormat>,
   for a given archive; avoids a second decompression pass for tar
   streams).
 - **Dependencies:** `zip`, `tar`, `flate2` (gz), `bzip2` (bz2),
-  `liblzma`/`xz2` (xz), `zstd` (zst) in core. **Rar** uses the `unrar`
+  `liblzma`/`xz2` (xz), `zstd` (zst), `sevenz-rust2` (7z, pure Rust — no
+  feature gate needed) in core. **Rar** uses the `unrar`
   crate (bindings to the vendored unrar C++ library; its license permits
   decompression use but is not OSI-approved) behind a core cargo feature
   `rar`, enabled by default in the cli and py crates. Without the feature,
@@ -147,7 +148,7 @@ pfs pack <GLOB|DIR> <OUT.parquet>
          [--compression zstd|snappy|none]
 
 pfs pack-archive <ARCHIVE> <OUT.parquet>
-         [--format zip|tar|tar.gz|tar.bz2|tar.xz|tar.zst|rar]
+         [--format zip|tar|tar.gz|tar.bz2|tar.xz|tar.zst|rar|7z]
          [--path-column NAME] [--content-column NAME]
          [--compression zstd|snappy|none]
 ```
@@ -179,8 +180,8 @@ pack_archive("weird-extension.bin", "out.parquet", format="zip")
   files (`root` required). Never expands archives.
 - `pack_archive(archive, out, *, format=None, path_column="path",
   content_column="content", compression="zstd")` — `format` is one of
-  `"zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" | "rar"`,
-  default auto-detect by magic bytes.
+  `"zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" | "rar" |
+  "7z"`, default auto-detect by magic bytes.
 - Both return `{"files": n, "bytes": total, "path": out}`.
 - Implemented as pyo3 functions in the py crate, wrapped in a small
   `python/parquet_file_fs/pack.py`, re-exported from `__init__.py`.
@@ -204,7 +205,8 @@ the display message; Python inherits the existing exception mapping.
   skipped; row-group flushing verified with a tiny `max_row_group_bytes`;
   compression options produce readable files. Rar round-trip runs only
   with the `rar` feature (fixture checked in — rar cannot be created by
-  the test).
+  the test); the 7z fixture is checked in as well if `sevenz-rust2`
+  cannot write archives.
 - **Rust (cli):** integration test spawning `CARGO_BIN_EXE_pfs` — happy
   path for glob, dir and archive sources; exit codes and stderr on
   failure.
@@ -227,5 +229,4 @@ the workspace layout.
 - Sharded output (`--max-shard-bytes`) — single file only for now.
 - Extra metadata columns (size, mtime, mime) — path + content only.
 - Packing from remote sources (s3/http) — local files and archives only.
-- 7z input (pure-rust `sevenz-rust2` exists; add later if needed).
 - Nested expansion (archives inside archives).
