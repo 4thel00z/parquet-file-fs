@@ -176,6 +176,33 @@ fn sevenz_roundtrip() {
     assert_roundtrip(&out);
 }
 
+#[test]
+fn sevenz_stops_on_first_entry_error_and_does_not_overwrite_it() {
+    use sevenz_rust2::{ArchiveEntry, ArchiveWriter};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ar = tmp.path().join("bad.7z");
+    let mut w = ArchiveWriter::create(&ar).unwrap();
+    // Each `push_archive_entry` call is its own (non-solid) block, so this archive
+    // has 3 blocks: the first entry's `..` rejection must halt iteration before the
+    // second block (a real duplicate) is ever reached.
+    w.push_archive_entry(ArchiveEntry::new_file("../evil.txt"), Some(&b"x"[..]))
+        .unwrap();
+    w.push_archive_entry(ArchiveEntry::new_file("dup.txt"), Some(&b"a"[..]))
+        .unwrap();
+    w.push_archive_entry(ArchiveEntry::new_file("dup.txt"), Some(&b"b"[..]))
+        .unwrap();
+    w.finish().unwrap();
+
+    let out = tmp.path().join("out.parquet");
+    let err = pack_archive(&ar, None, &out, &PackOptions::default())
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains(".."), "{err}");
+    assert!(!err.to_string().contains("duplicate"), "{err}");
+    assert!(!out.exists());
+}
+
 #[cfg(feature = "rar")]
 #[test]
 #[ignore = "requires fixtures/simple.rar (see fixtures/README.md)"]

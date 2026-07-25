@@ -484,7 +484,7 @@ fn pack_7z_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
     let mut r = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
         .map_err(|e| bad(e.to_string()))?;
     let mut inner: Result<(), FsError> = Ok(());
-    r.for_each_entries(
+    let result = r.for_each_entries(
         &mut |entry: &sevenz_rust2::ArchiveEntry, reader: &mut dyn Read| {
             if entry.is_directory() {
                 std::io::copy(reader, &mut std::io::sink())?;
@@ -496,13 +496,25 @@ fn pack_7z_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
                 Ok(()) => Ok(true),
                 Err(e) => {
                     inner = Err(e);
-                    Ok(false) // stop iterating; surface `inner` below
+                    // `Ok(false)` only halts iteration within the current block: the
+                    // crate's archive-level loop iterates blocks with
+                    // `folder_dec.for_each_entries(&mut each)?;`, discarding the `bool`
+                    // between blocks, so a later block would still run and could
+                    // overwrite `inner` with a second, unrelated error. Returning a
+                    // genuine `Err` here makes both the block- and archive-level `?`
+                    // halt immediately; it is just a carrier; the real error is `inner`,
+                    // checked first below.
+                    Err(std::io::Error::other("stopping after entry error").into())
                 }
             }
         },
-    )
-    .map_err(|e| bad(e.to_string()))?;
-    inner
+    );
+    // Check `inner` first: if the closure detected an error, `result` is just the
+    // carrier `Err` used to halt iteration, and must not mask the real (first) error.
+    match inner {
+        Err(e) => Err(e),
+        Ok(()) => result.map_err(|e| bad(e.to_string())),
+    }
 }
 
 #[cfg(feature = "rar")]
