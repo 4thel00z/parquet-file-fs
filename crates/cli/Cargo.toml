@@ -1,0 +1,23 @@
+[package]
+name = "parquet-file-fs-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pfs: create parquet archive shards readable by parquet-file-fs, from globs or archive files"
+
+[[bin]]
+name = "pfs"
+path = "src/main.rs"
+
+[features]
+default = ["rar"]
+rar = ["parquet-file-fs/rar"]
+
+[dependencies]
+parquet-file-fs = { path = "../core" }
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+zip = { version = "8", default-features = false, features = ["deflate"] }
