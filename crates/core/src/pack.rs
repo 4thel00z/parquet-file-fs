@@ -541,7 +541,8 @@ fn pack_rar_entries(archive: &Path, w: &mut PackWriter) -> Result<(), FsError> {
 fn pack_rar_entries(_archive: &Path, _w: &mut PackWriter) -> Result<(), FsError> {
     Err(FsError::Pack(
         "rar support not compiled in; rebuild with the 'rar' feature or \
-         install the CLI (cargo install parquet-file-fs-cli)"
+         install the CLI (cargo install --git https://github.com/4thel00z/parquet-file-fs \
+         parquet-file-fs-cli)"
             .into(),
     ))
 }

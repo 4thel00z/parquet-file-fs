@@ -94,7 +94,7 @@ pack_archive("bundle.tar.gz", "out.parquet")              # expand an archive
 pack_archive("weird.bin", "out.parquet", format="zip")    # detection override
 ```
 
-CLI (`cargo install parquet-file-fs-cli`):
+CLI (`cargo install --git https://github.com/4thel00z/parquet-file-fs parquet-file-fs-cli`):
 
 ```bash
 pfs pack 'data/images/**/*.png' out.parquet --root data
