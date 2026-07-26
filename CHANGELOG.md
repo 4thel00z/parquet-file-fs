@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.3.0](https://github.com/4thel00z/parquet-file-fs/compare/v0.2.0...v0.3.0) (2026-07-26)
+
+
+### Features
+
+* 7z and rar archive readers (rar behind a default-on cargo feature) ([d247cde](https://github.com/4thel00z/parquet-file-fs/commit/d247cded8a53c6bf048ba6e8ec77151fb7b91050))
+* core pack writer and pack_files ([33161b0](https://github.com/4thel00z/parquet-file-fs/commit/33161b07ea7a5c126c344019f17a5c08499d1d24))
+* create parquet archive shards from globs and archive files (pfs pack / pack_archive) ([8ef5d91](https://github.com/4thel00z/parquet-file-fs/commit/8ef5d91b1ecdacd7788ace9cdbf13d1ac2f65476))
+* pack_archive with magic-byte detection for zip and tar family ([001e179](https://github.com/4thel00z/parquet-file-fs/commit/001e17980c11288ac8f04a5280e955ed41137690))
+* pack_glob with root inference and directory shorthand ([bcc2766](https://github.com/4thel00z/parquet-file-fs/commit/bcc2766fcf1224c59fc91e5b3fc0fc16f7838c8c))
+* pfs CLI with pack and pack-archive subcommands ([bc200d1](https://github.com/4thel00z/parquet-file-fs/commit/bc200d138d647acf5294951f4e25d831f7e7f6b2))
+* python pack and pack_archive API ([5543fbc](https://github.com/4thel00z/parquet-file-fs/commit/5543fbcbef242a6e053d4c8ec9257e62e69bb742))
+
+
+### Bug Fixes
+
+* address PR review — non-lossy temp path, close handle before unlink, document 7z ordering ([c441bea](https://github.com/4thel00z/parquet-file-fs/commit/c441bea65542421c29e4850de48f56ec71d9bc1e))
+* never touch existing output when archive has no files ([001396c](https://github.com/4thel00z/parquet-file-fs/commit/001396c81014aebb1c3e40427cc89858d7526b71))
+* propagate first 7z entry error and halt iteration ([3811bcf](https://github.com/4thel00z/parquet-file-fs/commit/3811bcffd12374ce77dc149a128330da7c02e6a5))
+* write pack output via temp file + atomic rename ([7758ee8](https://github.com/4thel00z/parquet-file-fs/commit/7758ee8bebb4ea542d48cf223c5971caeb452c97))
+
+
+### Documentation
+
+* add 7z as a first-class pack_archive format ([4a0eb1e](https://github.com/4thel00z/parquet-file-fs/commit/4a0eb1e380571b1d2e5347abce8c71625fd27261))
+* add design spec for pack (create archives from glob/zip) ([fb09642](https://github.com/4thel00z/parquet-file-fs/commit/fb0964228a3acab8c138b7045f00c7e731bf6994))
+* correct CLI install command to git install ([c0b892e](https://github.com/4thel00z/parquet-file-fs/commit/c0b892e8261d283a22238db376c0384ad5395ce2))
+* creating archives with pfs pack / pack_archive ([e89d20e](https://github.com/4thel00z/parquet-file-fs/commit/e89d20e750d58f87079a95578e4fe6037d473a08))
+* generalize pack spec to multi-format pack_archive, drop source-type magic ([1e63d00](https://github.com/4thel00z/parquet-file-fs/commit/1e63d005bcfc41043ff22a8c3fd5f25fd6ce7d7b))
+* implementation plan for pack/pack_archive ([9c46364](https://github.com/4thel00z/parquet-file-fs/commit/9c46364ce037a558ce6d62a73a56dabe6a4d0bfd))
+* note 7z empty-file ordering in pack_7z_entries ([46ab977](https://github.com/4thel00z/parquet-file-fs/commit/46ab977f2f429eb2c7374e65b8cdb739a77a004d))
+
 ## [0.2.0](https://github.com/4thel00z/parquet-file-fs/compare/v0.1.0...v0.2.0) (2026-07-24)
 
 

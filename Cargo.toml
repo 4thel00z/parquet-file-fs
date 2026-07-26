@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/py", "crates/cli"]
 
 [workspace.package]
-version = "0.2.0" # x-release-please-version
+version = "0.3.0" # x-release-please-version
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/4thel00z/parquet-file-fs"

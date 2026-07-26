@@ -5,7 +5,7 @@ build-backend = "maturin"
 
 [project]
 name = "parquet-file-fs"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read-only fsspec filesystem over parquet archives: ls, cat and glob the files stored inside parquet shards, with a Rust core"
 readme = "README.md"
 requires-python = ">=3.9"
