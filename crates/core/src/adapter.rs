@@ -26,6 +26,8 @@ pub enum FsError {
     },
     #[error("io error for {url}: {source}")]
     Io { url: String, source: std::io::Error },
+    #[error("{0}")]
+    Pack(String),
 }
 
 pub trait RangeReader: Send + Sync {

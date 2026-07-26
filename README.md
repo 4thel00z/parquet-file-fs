@@ -78,6 +78,40 @@ bytes; callers never request past EOF), `glob(pattern) -> list[str]`.
 Glob patterns are supported for local paths and `s3://`; pass concrete
 URLs for `http(s)://`.
 
+## Creating archives
+
+The write side lives in the Rust core, exposed twice.
+
+Python:
+
+```python
+from parquet_file_fs import pack, pack_archive
+
+pack("data/images/**/*.png", "out.parquet", root="data")  # glob
+pack("data/", "out.parquet")                              # whole directory
+pack(["a.txt", "b.txt"], "out.parquet", root=".")         # explicit list
+pack_archive("bundle.tar.gz", "out.parquet")              # expand an archive
+pack_archive("weird.bin", "out.parquet", format="zip")    # detection override
+```
+
+CLI (`cargo install --git https://github.com/4thel00z/parquet-file-fs parquet-file-fs-cli`):
+
+```bash
+pfs pack 'data/images/**/*.png' out.parquet --root data
+pfs pack-archive bundle.zip out.parquet
+```
+
+Stored paths are relative to `--root`/`root=` (default: the glob's
+wildcard-free prefix, or the directory itself). A glob **never** expands
+archives it matches — a matched `.zip` is stored as bytes; expanding is
+always the explicit `pack-archive` call. Supported archive formats: zip,
+tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z, and rar (rar via the `rar`
+cargo feature, on by default). Output is zstd-compressed parquet
+(`--compression snappy|none` to change), one row group per ~32 MiB so
+readers stay lazy. Rows keep the archive's entry order, with one
+exception: 7z places zero-byte files at the end of the shard (contents
+and paths are unaffected).
+
 ## Notes
 
 - Read-only: mutation methods raise `NotImplementedError`.
@@ -88,9 +122,11 @@ URLs for `http(s)://`.
 
 ## Development
 
+Workspace layout: `crates/core` (Rust library core), `crates/py` (Python bindings via maturin), `crates/cli` (CLI binary).
+
 ```bash
 uv sync                 # dev deps from [dependency-groups]
-uv run maturin develop  # build + install the extension
+uv run maturin develop  # build + install the extension (per [tool.maturin] manifest-path in pyproject.toml)
 uv run pytest           # Python tests
 cargo test              # Rust tests
 cargo clippy --all-targets -- -D warnings

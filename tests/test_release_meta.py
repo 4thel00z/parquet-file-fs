@@ -30,24 +30,26 @@ WORKFLOW = REPO / ".github" / "workflows" / "release-please.yaml"
 
 def _package_version() -> str:
     manifest = tomllib.loads((REPO / "Cargo.toml").read_text())
-    return manifest["package"]["version"]
+    return manifest["workspace"]["package"]["version"]
 
 
 class TestVersionSync:
     def test_lockfile_pins_current_version(self) -> None:
-        """Cargo.lock matches Cargo.toml.
+        """Cargo.lock matches the workspace version for every member crate.
 
         A mismatch is exactly the state a release tag ends up in when the
         version bump lands without a lockfile regeneration.
         """
         version = _package_version()
         lock = tomllib.loads((REPO / "Cargo.lock").read_text())
-        pinned = [
-            pkg["version"] for pkg in lock["package"] if pkg["name"] == "parquet-file-fs"
-        ]
-        assert pinned, "parquet-file-fs not found in Cargo.lock"
-        assert pinned == [version], (
-            f"Cargo.lock pins {pinned} but Cargo.toml is at {version}; "
+        pinned = {
+            pkg["name"]: pkg["version"]
+            for pkg in lock["package"]
+            if pkg["name"].startswith("parquet-file-fs")
+        }
+        assert pinned, "parquet-file-fs crates not found in Cargo.lock"
+        assert set(pinned.values()) == {version}, (
+            f"Cargo.lock pins {pinned} but the workspace is at {version}; "
             "run `cargo update --workspace` and commit the lockfile"
         )
 
